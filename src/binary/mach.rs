@@ -176,7 +176,7 @@ impl Mach {
         let mut current_offset = commands_start;
         let mut load_commands = vec![];
         for _ in 0..header.number_of_load_commands {
-            let load_command = LoadCommand::load(data, current_offset);
+            let load_command = LoadCommand::load(data, current_offset, Endianness::Little);
             let command_size = load_command.size;
             load_commands.push(load_command);
             current_offset += command_size as usize;

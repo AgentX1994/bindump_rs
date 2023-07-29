@@ -12,8 +12,8 @@ pub struct LoadCommand {
 
 impl LoadCommand {
     pub(super) fn load(data: &[u8], current_offset: usize, endianness: Endianness) -> Self {
-        let command_type = read_u32(&data[current_offset..][..4], Endianness::Little);
-        let size = read_u32(&data[current_offset + 4..][..4], Endianness::Little);
+        let command_type = read_u32(&data[current_offset..][..4], endianness);
+        let size = read_u32(&data[current_offset + 4..][..4], endianness);
         let command_data = &data[current_offset + 8..][..size as usize];
         LoadCommand {
             size,
@@ -143,6 +143,71 @@ impl Command {
 }
 
 #[derive(Debug)]
+pub struct Section {
+    name: String,
+    segment_name: String,
+    addr: u32,
+    size: u32,
+    offset: u32,
+    align: u32,
+    relocation_offset: u32,
+    number_relocations: u32,
+    flags: u32,
+    reserved_1: u32,
+    reserved_2: u32,
+}
+
+impl Section {
+    fn size() -> usize {
+        68
+    }
+    fn load(data: &[u8], endianness: Endianness) -> Self {
+        let name_buf = &data[..16];
+        let name_cstr = CStr::from_bytes_until_nul(name_buf);
+        let name = match name_cstr {
+            Ok(name_cstr) => name_cstr.to_string_lossy().to_string(),
+            Err(_) => CString::new(name_buf)
+                .expect("Invalid Section Name")
+                .to_string_lossy()
+                .to_string(),
+        };
+        let segment_name_buf = &data[16..][..16];
+        let segment_name_cstr = CStr::from_bytes_until_nul(segment_name_buf);
+        let segment_name = match segment_name_cstr {
+            Ok(segment_name_cstr) => segment_name_cstr.to_string_lossy().to_string(),
+            Err(_) => CString::new(segment_name_buf)
+                .expect("Invalid Segment Name")
+                .to_string_lossy()
+                .to_string(),
+        };
+        let addr = read_u32(&data[32..][..4], endianness);
+        let size = read_u32(&data[36..][..4], endianness);
+        let offset = read_u32(&data[40..][..4], endianness);
+        let align = read_u32(&data[44..][..4], endianness);
+        let align = 2u32.pow(align);
+        let relocation_offset = read_u32(&data[38..][..4], endianness);
+        let number_relocations = read_u32(&data[42..][..4], endianness);
+        let flags = read_u32(&data[46..][..4], endianness);
+        let reserved_1 = read_u32(&data[50..][..4], endianness);
+        let reserved_2 = read_u32(&data[54..][..4], endianness);
+
+        Self {
+            name,
+            segment_name,
+            addr,
+            size,
+            offset,
+            align,
+            relocation_offset,
+            number_relocations,
+            flags,
+            reserved_1,
+            reserved_2,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SegmentDetails {
     name: String,
     vm_addr: u32,
@@ -151,8 +216,8 @@ pub struct SegmentDetails {
     file_size: u32,
     max_protection: i32,
     initial_protection: i32,
-    number_sections: u32,
     flags: u32,
+    sections: Vec<Section>,
 }
 
 impl SegmentDetails {
@@ -175,6 +240,14 @@ impl SegmentDetails {
         let number_sections = read_u32(&command_data[40..][..4], endianness);
         let flags = read_u32(&command_data[44..][..4], endianness);
 
+        let mut sections = Vec::with_capacity(number_sections as usize);
+        let mut current_offset = 48usize;
+        for _ in 0..number_sections {
+            let section = Section::load(&command_data[current_offset..], endianness);
+            sections.push(section);
+            current_offset += Section::size();
+        }
+
         Self {
             name,
             vm_addr,
@@ -183,8 +256,75 @@ impl SegmentDetails {
             file_size,
             max_protection,
             initial_protection,
-            number_sections,
             flags,
+            sections,
+        }
+    }
+}
+#[derive(Debug)]
+pub struct Section64 {
+    name: String,
+    segment_name: String,
+    addr: u64,
+    size: u64,
+    offset: u32,
+    align: u32,
+    relocation_offset: u32,
+    number_relocations: u32,
+    flags: u32,
+    reserved_1: u32,
+    reserved_2: u32,
+    reserved_3: u32,
+}
+
+impl Section64 {
+    fn size() -> usize {
+        80
+    }
+    fn load(data: &[u8], endianness: Endianness) -> Self {
+        let name_buf = &data[..16];
+        let name_cstr = CStr::from_bytes_until_nul(name_buf);
+        let name = match name_cstr {
+            Ok(name_cstr) => name_cstr.to_string_lossy().to_string(),
+            Err(_) => CString::new(name_buf)
+                .expect("Invalid Section Name")
+                .to_string_lossy()
+                .to_string(),
+        };
+        let segment_name_buf = &data[16..][..16];
+        let segment_name_cstr = CStr::from_bytes_until_nul(segment_name_buf);
+        let segment_name = match segment_name_cstr {
+            Ok(segment_name_cstr) => segment_name_cstr.to_string_lossy().to_string(),
+            Err(_) => CString::new(segment_name_buf)
+                .expect("Invalid Segment Name")
+                .to_string_lossy()
+                .to_string(),
+        };
+        let addr = read_u64(&data[32..][..8], endianness);
+        let size = read_u64(&data[40..][..8], endianness);
+        let offset = read_u32(&data[48..][..4], endianness);
+        let align = read_u32(&data[52..][..4], endianness);
+        let align = 2u32.pow(align);
+        let relocation_offset = read_u32(&data[56..][..4], endianness);
+        let number_relocations = read_u32(&data[60..][..4], endianness);
+        let flags = read_u32(&data[64..][..4], endianness);
+        let reserved_1 = read_u32(&data[68..][..4], endianness);
+        let reserved_2 = read_u32(&data[72..][..4], endianness);
+        let reserved_3 = read_u32(&data[76..][..4], endianness);
+
+        Self {
+            name,
+            segment_name,
+            addr,
+            size,
+            offset,
+            align,
+            relocation_offset,
+            number_relocations,
+            flags,
+            reserved_1,
+            reserved_2,
+            reserved_3,
         }
     }
 }
@@ -198,8 +338,8 @@ pub struct Segment64Details {
     file_size: u64,
     max_protection: i32,
     initial_protection: i32,
-    number_sections: u32,
     flags: u32,
+    sections: Vec<Section64>,
 }
 
 impl Segment64Details {
@@ -222,6 +362,14 @@ impl Segment64Details {
         let number_sections = read_u32(&command_data[56..][..4], endianness);
         let flags = read_u32(&command_data[60..][..4], endianness);
 
+        let mut sections = Vec::with_capacity(number_sections as usize);
+        let mut current_offset = 64usize;
+        for _ in 0..number_sections {
+            let section = Section64::load(&command_data[current_offset..], endianness);
+            sections.push(section);
+            current_offset += Section64::size();
+        }
+
         Self {
             name,
             vm_addr,
@@ -230,8 +378,8 @@ impl Segment64Details {
             file_size,
             max_protection,
             initial_protection,
-            number_sections,
             flags,
+            sections,
         }
     }
 }

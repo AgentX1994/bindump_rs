@@ -217,10 +217,10 @@ impl Segment64Details {
         let vm_size = read_u64(&command_data[24..][..8], endianness);
         let file_offset = read_u64(&command_data[32..][..8], endianness);
         let file_size = read_u64(&command_data[40..][..8], endianness);
-        let max_protection = read_i32(&command_data[44..][..4], endianness);
-        let initial_protection = read_i32(&command_data[48..][..4], endianness);
-        let number_sections = read_u32(&command_data[52..][..4], endianness);
-        let flags = read_u32(&command_data[56..][..4], endianness);
+        let max_protection = read_i32(&command_data[48..][..4], endianness);
+        let initial_protection = read_i32(&command_data[52..][..4], endianness);
+        let number_sections = read_u32(&command_data[56..][..4], endianness);
+        let flags = read_u32(&command_data[60..][..4], endianness);
 
         Self {
             name,

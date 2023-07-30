@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Endianness {
     Little,
@@ -45,6 +47,28 @@ impl TryFrom<i32> for CpuType {
             18 => Ok(Self::PowerPc),
             16777234 => Ok(Self::PowerPc64),
             _ => Err(value),
+        }
+    }
+}
+
+impl fmt::Display for CpuType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CpuType::Any => write!(f, "Any"),
+            CpuType::Vax => write!(f, "Vax"),
+            CpuType::Mc680x0 => write!(f, "Mc680x0"),
+            CpuType::X86 => write!(f, "X86"),
+            CpuType::X86_64 => write!(f, "X86_64"),
+            CpuType::Mc98000 => write!(f, "Mc98000"),
+            CpuType::Hppa => write!(f, "Hppa"),
+            CpuType::Arm => write!(f, "Arm"),
+            CpuType::Arm64 => write!(f, "Arm64"),
+            CpuType::Arm64_32 => write!(f, "Arm64_32"),
+            CpuType::Mc88000 => write!(f, "Mc88000"),
+            CpuType::Sparc => write!(f, "Sparc"),
+            CpuType::I860 => write!(f, "I860"),
+            CpuType::PowerPc => write!(f, "PowerPc"),
+            CpuType::PowerPc64 => write!(f, "PowerPc64"),
         }
     }
 }

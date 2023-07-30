@@ -2,6 +2,8 @@ pub mod load_commands;
 pub mod machine;
 mod utils;
 
+use std::fmt;
+
 use load_commands::LoadCommand;
 use machine::{CpuType, Endianness};
 use utils::{read_i32, read_u32};
@@ -61,6 +63,14 @@ pub enum MachArch {
     // TODO: 64 bit
 }
 
+impl fmt::Display for MachArch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MachArch::Arch32(arch) => write!(f, "{}", arch),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MachArchDetails {
     /// The type of CPU
@@ -96,6 +106,18 @@ impl MachArchDetails {
             align,
             mach_object,
         }
+    }
+}
+
+impl fmt::Display for MachArchDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Cpu Type: {}", self.cpu_type)?;
+        writeln!(f, "Cpu Subtype: {:x}", self.cpu_subtype)?;
+        writeln!(f, "Offset: {:#x}", self.offset)?;
+        writeln!(f, "Size: {} bytes", self.size)?;
+        writeln!(f, "Align: {}", self.align)?;
+        writeln!(f, "Mach Object:")?;
+        writeln!(f, "{}", self.mach_object)
     }
 }
 
@@ -148,7 +170,6 @@ impl Mach {
     pub(crate) fn load(data: &[u8]) -> Self {
         // TODO: we are currently assume all binaries are "universal"
         let magic = u32::from_be_bytes(data[0..4].try_into().unwrap());
-        println!("Magic = {:#x}", magic);
         match magic {
             0xcafebabe => Self::load_universal_32_bit_little_endian(magic, data),
             0xfeedface => todo!(),
@@ -190,5 +211,31 @@ impl Mach {
             header,
             load_commands,
         })
+    }
+}
+
+impl fmt::Display for Mach {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Mach::Universal(magic, arches) => {
+                writeln!(f, "Universal Binary: {} arches", arches.len())?;
+                writeln!(f, "Magic = {:x}", magic)?;
+                for (i, arch) in arches.iter().enumerate() {
+                    writeln!(f, "Arch {}:", i)?;
+                    writeln!(f, "{}", arch)?;
+                }
+                Ok(())
+            }
+            Mach::MachO(details) => {
+                let header = &details.header;
+                writeln!(f, "Mach-O: {} Architecture", header.cpu_type)?;
+                writeln!(f, "Load Commands:")?;
+                for (i, command) in details.load_commands.iter().enumerate() {
+                    writeln!(f, "Load Command {}", i)?;
+                    writeln!(f, "{}", command)?;
+                }
+                Ok(())
+            }
+        }
     }
 }

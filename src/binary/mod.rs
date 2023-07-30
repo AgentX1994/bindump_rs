@@ -1,4 +1,4 @@
-use std::{io, path::Path};
+use std::{fmt, io, path::Path};
 
 pub mod elf;
 pub mod mach;
@@ -18,7 +18,6 @@ pub enum Object {
 impl Object {
     pub fn load<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let data = std::fs::read(path)?;
-        println!("data[0..4] = {:x?}", &data[0..4]);
         // Check magic bytes
         // TODO find a better way to match the magic bytes?
         match data[0..4] {
@@ -33,6 +32,16 @@ impl Object {
             | [0xcf, 0xfa, 0xed, 0xfe]
             | [0xce, 0xfa, 0xed, 0xfe] => Ok(Self::Mach(Mach::load(&data[..]))),
             _ => todo!(),
+        }
+    }
+}
+
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Object::Pe(pe) => write!(f, "{}", pe),
+            Object::Elf(elf) => write!(f, "{}", elf),
+            Object::Mach(macho) => write!(f, "{}", macho),
         }
     }
 }

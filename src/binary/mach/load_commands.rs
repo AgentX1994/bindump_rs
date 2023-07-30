@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString};
+use std::fmt;
 
 use super::machine::Endianness;
 use super::utils::{read_i32, read_u32, read_u64};
@@ -19,6 +20,13 @@ impl LoadCommand {
             size,
             command: Command::load(command_type, command_data, endianness),
         }
+    }
+}
+
+impl fmt::Display for LoadCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Command Size: {} bytes", self.size)?;
+        write!(f, "Command: {}", self.command)
     }
 }
 
@@ -207,6 +215,23 @@ impl Section {
     }
 }
 
+impl fmt::Display for Section {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Name: {}", self.name)?;
+        writeln!(f, "Segment Name: {}", self.segment_name)?;
+        writeln!(f, "Addr: {:x}", self.addr)?;
+        writeln!(f, "Size: {} bytes", self.size)?;
+        writeln!(f, "Offset: {:x}", self.offset)?;
+        writeln!(f, "Align: {} bytes", self.align)?;
+        writeln!(f, "Relocations Offset: {:x}", self.relocation_offset)?;
+        writeln!(f, "Number of relocations: {}", self.number_relocations)?;
+        writeln!(f, "Flags: {:x}", self.flags)?;
+        writeln!(f, "Reserved 1: {:x}", self.reserved_1)?;
+        writeln!(f, "Reserved 2: {:x}", self.reserved_2)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct SegmentDetails {
     name: String,
@@ -259,6 +284,26 @@ impl SegmentDetails {
             flags,
             sections,
         }
+    }
+}
+
+impl fmt::Display for SegmentDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Name: {}", self.name)?;
+        writeln!(f, "VM Addr: {:x}", self.vm_addr)?;
+        writeln!(f, "VM Size: {} bytes", self.vm_size)?;
+        writeln!(f, "File Offset: {:x}", self.file_offset)?;
+        writeln!(f, "File Size: {} bytes", self.file_size)?;
+        // TODO: Print protections better!
+        writeln!(f, "Max Protection: {}", self.max_protection)?;
+        writeln!(f, "Initial Protection: {}", self.initial_protection)?;
+        writeln!(f, "Flags: {:x}", self.flags)?;
+        writeln!(f, "Number of sections: {}", self.sections.len())?;
+        for (i, section) in self.sections.iter().enumerate() {
+            writeln!(f, "Section {}:", i)?;
+            writeln!(f, "{}", section)?;
+        }
+        Ok(())
     }
 }
 #[derive(Debug)]
@@ -329,6 +374,24 @@ impl Section64 {
     }
 }
 
+impl fmt::Display for Section64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Name: {}", self.name)?;
+        writeln!(f, "Segment Name: {}", self.segment_name)?;
+        writeln!(f, "Addr: {:x}", self.addr)?;
+        writeln!(f, "Size: {} bytes", self.size)?;
+        writeln!(f, "Offset: {:x}", self.offset)?;
+        writeln!(f, "Align: {} bytes", self.align)?;
+        writeln!(f, "Relocations Offset: {:x}", self.relocation_offset)?;
+        writeln!(f, "Number of relocations: {}", self.number_relocations)?;
+        writeln!(f, "Flags: {:x}", self.flags)?;
+        writeln!(f, "Reserved 1: {:x}", self.reserved_1)?;
+        writeln!(f, "Reserved 2: {:x}", self.reserved_2)?;
+        writeln!(f, "Reserved 3: {:x}", self.reserved_3)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Segment64Details {
     name: String,
@@ -380,6 +443,93 @@ impl Segment64Details {
             initial_protection,
             flags,
             sections,
+        }
+    }
+}
+
+impl fmt::Display for Segment64Details {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Name: {}", self.name)?;
+        writeln!(f, "VM Addr: {:x}", self.vm_addr)?;
+        writeln!(f, "VM Size: {} bytes", self.vm_size)?;
+        writeln!(f, "File Offset: {:x}", self.file_offset)?;
+        writeln!(f, "File Size: {} bytes", self.file_size)?;
+        // TODO: Print protections better!
+        writeln!(f, "Max Protection: {}", self.max_protection)?;
+        writeln!(f, "Initial Protection: {}", self.initial_protection)?;
+        writeln!(f, "Flags: {:x}", self.flags)?;
+        writeln!(f, "Number of sections: {}", self.sections.len())?;
+        for (i, section) in self.sections.iter().enumerate() {
+            writeln!(f, "Section {}:", i)?;
+            writeln!(f, "{}", section)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::Segment(details) => {
+                writeln!(f, "Segment")?;
+                writeln!(f, "{}", details)
+            }
+            Command::SymbolTable => writeln!(f, "SymbolTable"),
+            Command::SymbolSegment => writeln!(f, "SymbolSegment"),
+            Command::Thread => writeln!(f, "Thread"),
+            Command::UnixThread => writeln!(f, "UnixThread"),
+            Command::LoadFixedVmLibrary => writeln!(f, "LoadFixedVmLibrary"),
+            Command::IdentifyFixedVmLibrary => writeln!(f, "IdentifyFixedVmLibrary"),
+            Command::Identify => writeln!(f, "Identify"),
+            Command::IncludeFixedVmLibrary => writeln!(f, "IncludeFixedVmLibrary"),
+            Command::Prepage => writeln!(f, "Prepage"),
+            Command::DynamicSymbolTable => writeln!(f, "DynamicSymbolTable"),
+            Command::LoadDynamicLibrary => writeln!(f, "LoadDynamicLibrary"),
+            Command::IdentifyDynamicLibrary => writeln!(f, "IdentifyDynamicLibrary"),
+            Command::LoadDynamicLinker => writeln!(f, "LoadDynamicLinker"),
+            Command::IdentifyDynamicLinker => writeln!(f, "IdentifyDynamicLinker"),
+            Command::PreboundDynamicLibrary => writeln!(f, "PreboundDynamicLibrary"),
+            Command::Routines => writeln!(f, "Routines"),
+            Command::SubFramework => writeln!(f, "SubFramework"),
+            Command::SubUmbrella => writeln!(f, "SubUmbrella"),
+            Command::SubClient => writeln!(f, "SubClient"),
+            Command::SubLibrary => writeln!(f, "SubLibrary"),
+            Command::TwoLevelHints => writeln!(f, "TwoLevelHints"),
+            Command::PrebindChecksum => writeln!(f, "PrebindChecksum"),
+            Command::LoadWeakDynamicLibrary => writeln!(f, "LoadWeakDynamicLibrary"),
+            Command::Segment64(details) => {
+                writeln!(f, "Segment64")?;
+                write!(f, "{}", details)
+            }
+            Command::Routines64 => writeln!(f, "Routines64"),
+            Command::Uuid => writeln!(f, "Uuid"),
+            Command::RPath => writeln!(f, "RPath"),
+            Command::CodeSignature => writeln!(f, "CodeSignature"),
+            Command::SegmentSplitInfo => writeln!(f, "SegmentSplitInfo"),
+            Command::ReexportDynamicLibrary => writeln!(f, "ReexportDynamicLibrary"),
+            Command::LazyLoadDynamicLibrary => writeln!(f, "LazyLoadDynamicLibrary"),
+            Command::EncryptionInfo => writeln!(f, "EncryptionInfo"),
+            Command::DynamicLinkerInfo => writeln!(f, "DynamicLinkerInfo"),
+            Command::DynamicLinkerInfoOnly => writeln!(f, "DynamicLinkerInfoOnly"),
+            Command::LoadUpwardDynamicLibrary => writeln!(f, "LoadUpwardDynamicLibrary"),
+            Command::VersionMinMacOsx => writeln!(f, "VersionMinMacOsx"),
+            Command::VersionMinIphoneOs => writeln!(f, "VersionMinIphoneOs"),
+            Command::FunctionStarts => writeln!(f, "FunctionStarts"),
+            Command::DynamicLinkerEnvironment => writeln!(f, "DynamicLinkerEnvironment"),
+            Command::Main => writeln!(f, "Main"),
+            Command::DataInCode => writeln!(f, "DataInCode"),
+            Command::SourceVersion => writeln!(f, "SourceVersion"),
+            Command::DynamicLibraryCodeSignDrs => writeln!(f, "DynamicLibraryCodeSignDrs"),
+            Command::EncryptionInfo64 => writeln!(f, "EncryptionInfo64"),
+            Command::LinkerOption => writeln!(f, "LinkerOption"),
+            Command::LinkerOptimizationHint => writeln!(f, "LinkerOptimizationHint"),
+            Command::VersionMinTvOs => writeln!(f, "VersionMinTvOs"),
+            Command::VersionMinWatchOs => writeln!(f, "VersionMinWatchOs"),
+            Command::Note => writeln!(f, "Note"),
+            Command::BuildVersion => writeln!(f, "BuildVersion"),
+            Command::DynamicLinkerExportsTrie => writeln!(f, "DynamicLinkerExportsTrie"),
+            Command::DynamicLinkerChainedFixups => writeln!(f, "DynamicLinkerChainedFixups"),
+            Command::FileSetEntry => writeln!(f, "FileSetEntry"),
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::{fmt, io, path::Path};
+use std::{fmt, path::Path};
 
 pub mod elf;
 pub mod mach;
@@ -8,6 +8,8 @@ use elf::Elf;
 use mach::Mach;
 use pe::Pe;
 
+use crate::error::BinDumpResult;
+
 #[derive(Debug)]
 pub enum Object {
     Pe(Pe),
@@ -16,7 +18,7 @@ pub enum Object {
 }
 
 impl Object {
-    pub fn load<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn load<P: AsRef<Path>>(path: P) -> BinDumpResult<Self> {
         let data = std::fs::read(path)?;
         // Check magic bytes
         // TODO find a better way to match the magic bytes?
@@ -30,7 +32,14 @@ impl Object {
             | [0xfe, 0xed, 0xfa, 0xce]
             | [0xfe, 0xed, 0xfa, 0xcf]
             | [0xcf, 0xfa, 0xed, 0xfe]
-            | [0xce, 0xfa, 0xed, 0xfe] => Ok(Self::Mach(Mach::load(&data[..]))),
+            | [0xce, 0xfa, 0xed, 0xfe] => match Mach::parse(&data) {
+                Ok((_input, mach)) => Ok(Self::Mach(mach)),
+                Err(err) => match err.to_owned() {
+                    nom::Err::Incomplete(_x) => todo!(),
+                    nom::Err::Error(e) => Err(e.into()),
+                    nom::Err::Failure(e) => Err(e.into()),
+                },
+            },
             _ => todo!(),
         }
     }

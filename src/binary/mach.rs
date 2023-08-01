@@ -1,21 +1,35 @@
 pub mod load_commands;
 pub mod machine;
-mod utils;
 
 use std::fmt;
 
+use derive_try_from_primitive::TryFromPrimitive;
 use load_commands::LoadCommand;
-use machine::{CpuType, Endianness};
-use utils::{read_i32, read_u32};
+use machine::CpuType;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    combinator::map,
+    error::context,
+    multi::count,
+    number::{
+        complete::{self, be_u32},
+        Endianness,
+    },
+    sequence::tuple,
+};
+
+use crate::parse::{self, ParseResult};
 
 #[derive(Debug)]
 pub enum Mach {
-    Universal(u32, Vec<MachArch>),
+    Universal(Vec<MachArch>),
     MachO(MachODetails),
 }
 
 // From loader.h
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(u32)]
 pub enum FileType {
     Object = 1,
     Executable = 2,
@@ -33,26 +47,17 @@ pub enum FileType {
     GpuDynamicLibrary = 14,
 }
 
-impl TryFrom<u32> for FileType {
-    // TODO: Implement a proper error type
-    type Error = u32;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Object),
-            2 => Ok(Self::Executable),
-            3 => Ok(Self::FixedVmLibrary),
-            4 => Ok(Self::Core),
-            5 => Ok(Self::Preload),
-            6 => Ok(Self::DynamicLibrary),
-            7 => Ok(Self::DynamicLinkEditor),
-            8 => Ok(Self::Bundle),
-            9 => Ok(Self::DynamicLibraryStub),
-            10 => Ok(Self::DebugSymbols),
-            11 => Ok(Self::Kexts),
-            12 => Ok(Self::Fileset),
-            13 => Ok(Self::GpuProgram),
-            14 => Ok(Self::GpuDynamicLibrary),
-            _ => Err(value),
+impl FileType {
+    pub(crate) fn parse(
+        endianness: Endianness,
+    ) -> impl FnMut(parse::Input) -> parse::ParseResult<Self> {
+        move |input: parse::Input| {
+            context(
+                "Parse File Type",
+                map(nom::number::complete::u32(endianness), |typ| {
+                    Self::try_from(typ).expect("Invalid File Type!")
+                }),
+            )(input)
         }
     }
 }
@@ -87,25 +92,29 @@ pub struct MachArchDetails {
 }
 
 impl MachArchDetails {
-    fn load(data: &[u8], current_position: usize) -> Self {
-        let header_data = &data[current_position..][..20];
-        let cpu_type_i32 = read_i32(&header_data[0..4], Endianness::Big);
-        // TODO: Error handling
-        let cpu_type = CpuType::try_from(cpu_type_i32).expect("Unknown CPU Type!");
-        let cpu_subtype = read_i32(&header_data[4..8], Endianness::Big);
-        let offset = read_u32(&header_data[8..12], Endianness::Big);
-        let size = read_u32(&header_data[12..16], Endianness::Big);
-        let align = read_u32(&header_data[16..20], Endianness::Big);
-        let align = 2u32.pow(align);
-        let mach_object = Mach::load(&data[offset as usize..][..size as usize]);
-        Self {
-            cpu_type,
-            cpu_subtype,
-            offset,
-            size,
-            align,
-            mach_object,
-        }
+    fn parse<'a>(input: parse::Input<'a>, full_input: parse::Input<'a>) -> ParseResult<'a, Self> {
+        let (input, (cpu_type, cpu_subtype, offset, size, align)) = context(
+            "Parse Mach Arch Header",
+            tuple((
+                CpuType::parse(Endianness::Big),
+                complete::i32(Endianness::Big),
+                complete::u32(Endianness::Big),
+                complete::u32(Endianness::Big),
+                map(complete::u32(Endianness::Big), |align| 2u32.pow(align)),
+            )),
+        )(input)?;
+        let (_, mach_object) = Mach::parse(&full_input[offset as usize..][..size as usize])?;
+        Ok((
+            input,
+            Self {
+                cpu_type,
+                cpu_subtype,
+                offset,
+                size,
+                align,
+                mach_object,
+            },
+        ))
     }
 }
 
@@ -129,7 +138,6 @@ pub struct MachODetails {
 
 #[derive(Debug)]
 pub struct MachHeader {
-    magic: u32,
     cpu_type: CpuType,
     cpu_subtype: i32,
     file_type: FileType,
@@ -140,86 +148,116 @@ pub struct MachHeader {
 }
 
 impl MachHeader {
-    fn load(data: &[u8], endianness: Endianness) -> Self {
-        let header_data = &data[..32];
-        // TODO: Error handling
-        let magic = read_u32(&header_data[0..4], endianness);
-        let cpu_type_i32 = read_i32(&header_data[4..8], endianness);
-        let cpu_type = CpuType::try_from(cpu_type_i32).expect("Unknown CPU Type!");
-        let cpu_subtype = read_i32(&header_data[8..12], endianness);
-        let file_type = read_u32(&header_data[12..16], endianness);
-        let file_type = FileType::try_from(file_type).expect("Unknown file type!");
-        let number_of_load_commands = read_u32(&header_data[16..20], endianness);
-        let total_command_size = read_u32(&header_data[20..24], endianness);
-        let flags = read_u32(&header_data[24..28], endianness);
-        let reserved = read_u32(&header_data[28..32], endianness);
-        Self {
-            magic,
-            cpu_type,
-            cpu_subtype,
-            file_type,
-            number_of_load_commands,
-            total_command_size,
-            flags,
-            reserved,
-        }
+    fn parse(input: parse::Input, endianness: Endianness) -> parse::ParseResult<Self> {
+        let (
+            input,
+            (
+                cpu_type,
+                cpu_subtype,
+                file_type,
+                number_of_load_commands,
+                total_command_size,
+                flags,
+                reserved,
+            ),
+        ) = context(
+            "Load MachO Header",
+            tuple((
+                CpuType::parse(endianness),
+                complete::i32(endianness),
+                FileType::parse(endianness),
+                complete::u32(endianness),
+                complete::u32(endianness),
+                complete::u32(endianness),
+                complete::u32(endianness),
+            )),
+        )(input)?;
+        Ok((
+            input,
+            Self {
+                cpu_type,
+                cpu_subtype,
+                file_type,
+                number_of_load_commands,
+                total_command_size,
+                flags,
+                reserved,
+            },
+        ))
     }
 }
 
 impl Mach {
-    pub(crate) fn load(data: &[u8]) -> Self {
-        // TODO: we are currently assume all binaries are "universal"
-        let magic = u32::from_be_bytes(data[0..4].try_into().unwrap());
+    pub(crate) fn parse(input: parse::Input) -> parse::ParseResult<Self> {
+        let full_input = input;
+        let (input, magic) = context(
+            "Magic",
+            alt((
+                tag(&[0xca, 0xfe, 0xba, 0xbe]),
+                tag(&[0xfe, 0xed, 0xfa, 0xce]),
+                tag(&[0xfe, 0xed, 0xfa, 0xcf]),
+                tag(&[0xcf, 0xfa, 0xed, 0xfe]),
+                tag(&[0xce, 0xfa, 0xed, 0xfe]),
+            )),
+        )(input)?;
         match magic {
-            0xcafebabe => Self::load_universal_32_bit_little_endian(magic, data),
-            0xfeedface => todo!(),
-            0xfeedfacf => todo!(),
-            0xcffaedfe => Self::load_64_bit_little_endian(magic, data),
-            0xcefaedfe => todo!(),
-            _ => panic!("Unknown magic: {:x}", magic),
+            [0xca, 0xfe, 0xba, 0xbe] => {
+                Self::parse_universal_32_bit_little_endian(input, full_input)
+            }
+            [0xfe, 0xed, 0xfa, 0xce] => todo!(),
+            [0xfe, 0xed, 0xfa, 0xcf] => todo!(),
+            [0xcf, 0xfa, 0xed, 0xfe] => Self::parse_64_bit_little_endian(input, full_input),
+            [0xce, 0xfa, 0xed, 0xfe] => todo!(),
+            _ => unreachable!(),
         }
     }
 
-    fn load_universal_32_bit_little_endian(magic: u32, data: &[u8]) -> Self {
-        assert_eq!(magic, 0xcafebabe);
-        let num_arches = u32::from_be_bytes(data[4..8].try_into().unwrap());
-        let arches = (0..num_arches as usize)
-            .map(|i| MachArch::Arch32(MachArchDetails::load(data, 8 + (i * 20))))
-            .collect();
-        Self::Universal(magic, arches)
+    fn parse_universal_32_bit_little_endian<'a>(
+        input: parse::Input<'a>,
+        full_input: parse::Input<'a>,
+    ) -> ParseResult<'a, Self> {
+        let (input, num_arches) = context("Number of arches", be_u32)(input)?;
+        let (input, arches) = {
+            let mut input = input;
+            let mut arches = Vec::new();
+            for _ in 0..num_arches {
+                let (next_input, arch) = MachArchDetails::parse(input, full_input)?;
+                input = next_input;
+                arches.push(MachArch::Arch32(arch));
+            }
+            (input, arches)
+        };
+
+        Ok((input, Self::Universal(arches)))
     }
 
-    fn load_64_bit_little_endian(magic: u32, data: &[u8]) -> Self {
-        assert_eq!(magic, 0xcffaedfe);
-        let header = MachHeader::load(data, Endianness::Little);
-        let commands_start = 32usize;
-        let commands_end = commands_start + header.total_command_size as usize;
-        let mut current_offset = commands_start;
-        let mut load_commands = vec![];
-        for _ in 0..header.number_of_load_commands {
-            let load_command = LoadCommand::load(data, current_offset, Endianness::Little);
-            let command_size = load_command.size;
-            load_commands.push(load_command);
-            current_offset += command_size as usize;
-        }
-        if current_offset != commands_end {
-            println!(
-                "Warning: size of load commands doesn't match value in header! Corrupted binary?"
-            );
-        }
-        Mach::MachO(MachODetails {
-            header,
-            load_commands,
-        })
+    fn parse_64_bit_little_endian<'a>(
+        input: parse::Input<'a>,
+        _full_input: parse::Input<'a>,
+    ) -> parse::ParseResult<'a, Self> {
+        let (input, header) = MachHeader::parse(input, Endianness::Little)?;
+        let (input, load_commands) = context(
+            "Load Load Commands",
+            count(
+                LoadCommand::parse(Endianness::Little),
+                header.number_of_load_commands as usize,
+            ),
+        )(input)?;
+        Ok((
+            input,
+            Mach::MachO(MachODetails {
+                header,
+                load_commands,
+            }),
+        ))
     }
 }
 
 impl fmt::Display for Mach {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Mach::Universal(magic, arches) => {
+            Mach::Universal(arches) => {
                 writeln!(f, "Universal Binary: {} arches", arches.len())?;
-                writeln!(f, "Magic = {:x}", magic)?;
                 for (i, arch) in arches.iter().enumerate() {
                     writeln!(f, "Arch {}:", i)?;
                     writeln!(f, "{}", arch)?;

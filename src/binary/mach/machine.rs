@@ -1,13 +1,13 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug)]
-pub enum Endianness {
-    Little,
-    Big,
-}
+use derive_try_from_primitive::TryFromPrimitive;
+use nom::{combinator::map, error::context, number::Endianness};
+
+use crate::parse;
 
 // From machine.h
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(i32)]
 pub enum CpuType {
     Any = -1,
     Vax = 1,
@@ -26,27 +26,17 @@ pub enum CpuType {
     PowerPc64 = 16777234,
 }
 
-impl TryFrom<i32> for CpuType {
-    // TODO: Implement a proper error type
-    type Error = i32;
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            -1 => Ok(Self::Any),
-            1 => Ok(Self::Vax),
-            6 => Ok(Self::Mc680x0),
-            7 => Ok(Self::X86),
-            16777223 => Ok(Self::X86_64),
-            10 => Ok(Self::Mc98000),
-            11 => Ok(Self::Hppa),
-            12 => Ok(Self::Arm),
-            16777228 => Ok(Self::Arm64),
-            33554444 => Ok(Self::Arm64_32),
-            13 => Ok(Self::Mc88000),
-            14 => Ok(Self::Sparc),
-            15 => Ok(Self::I860),
-            18 => Ok(Self::PowerPc),
-            16777234 => Ok(Self::PowerPc64),
-            _ => Err(value),
+impl CpuType {
+    pub(crate) fn parse(
+        endianness: Endianness,
+    ) -> impl FnMut(parse::Input) -> parse::ParseResult<Self> {
+        move |input: parse::Input| {
+            context(
+                "Parse Cpu Type",
+                map(nom::number::complete::i32(endianness), |typ| {
+                    Self::try_from(typ).expect("Invalid Cpu Type!")
+                }),
+            )(input)
         }
     }
 }
